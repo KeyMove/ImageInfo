@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PNG/JPEG Info</title>
+</head>
+<style>
+    *{
+        padding: 0;margin: 0;
+        box-sizing: border-box;
+    }
+    body{
+        overflow: hidden;
+    }
+    .mainpanel{
+        display: flex;
+        min-height: 100vh;
+        background: linear-gradient(135deg,
+        hsl(170deg,80%,70%),
+        hsl(190deg,80%,70%),
+        hsl(250deg,80%,70%),
+        hsl(320deg,80%,70%)
+        );
+        justify-content: center;
+        align-items: center;
+        background-size: 200% 200%;
+        animation: gradient-move 30s infinite alternate;
+    }
+    @keyframes gradient-move {
+        0%{background-position: 0% 0%;}
+        100%{background-position: 100% 100%;}
+    }
+    .box{
+        display: block;
+        background:rgba(255, 255, 255, .1);
+        min-height: 400px;
+        border-radius: 10px;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 25px 45px rgba(0,0,0,0.1);
+    }
+    .box::before{
+        display: block;
+        content: "图片信息";
+        text-align: center;
+        font-size: 2em;
+        
+    }
+    .boxitems{
+        border-top: 2px solid #000;
+        display: flex;
+        margin: 1em;
+    }
+    .vbox{
+        display: block;
+    }
+    .bt{
+        width: 100%;
+        background:rgba(255, 255, 255, .2);
+        border: none;
+        padding: 10px 20px;
+        border-radius: 35px;
+        border: 1px solid rgba(255, 255, 255, .5);
+        border-right: 1px solid rgba(255, 255, 255, .2);
+        border-bottom: 1px solid rgba(255, 255, 255, .2);
+        font-size: 16px;
+        box-shadow: 0 5px 15px rgba(255, 255, 255, .1);
+        cursor: pointer;
+    }
+    .bt:hover{
+        box-shadow: 0 0 10px rgba(255, 255, 255, 0.3),
+        0 0 60px rgba(255, 255, 255, 0.3);
+    }
+
+</style>
+<body>
+<div class="mainpanel">
+    <div class="box">
+        <div class="boxitems">
+            <div class="imgpanel">
+                <canvas id="canvas" class="panel" width="448" height="448" style="display: block; margin: auto; border: 2px dashed #ccc;"></canvas>
+            </div>
+            <div style="display: block;overflow: hidden;">
+                <div id="outputtext" contenteditable="true" style="max-width: 400px;" ></div>
+            </div>
+        </div>
+        <div style="padding: 10px;display: none;">
+            <button class="bt" onclick="tagger">选择文件夹</button>
+        </div>
+        <div id="wdbt" style="padding: 10px;display: none;">
+            <button class="bt">wd-vit-tagger-v3</button>
+            <span id="wdrangv">阈值:50</span>
+            <input style="width: 100%;" type="range" name="wdrang" id="wdrang" min="1" max="100" value="50" oninput="wdrangv.innerText='阈值:'+this.value">
+        </div>
+    </div>
+</div>
+</body>
+<script>
+    class DataHelper{
+        constructor(val=null,LE=true){
+            this.data=val?val:[];
+            this.rpos=0;
+            this.LE=LE;
+        }
+        w32(v){
+            if(this.LE){
+                this.data.push((v>>0)&0xff);
+                this.data.push((v>>8)&0xff);
+                this.data.push((v>>16)&0xff);
+                this.data.push((v>>24)&0xff);
+            }
+            else{
+                this.data.push((v>>24)&0xff);
+                this.data.push((v>>16)&0xff);
+                this.data.push((v>>8)&0xff);
+                this.data.push((v>>0)&0xff);
+            }
+            return this;
+        }
+        w16(v){
+            if(this.LE){
+                this.data.push((v>>0)&0xff);
+                this.data.push((v>>8)&0xff);
+            }
+            else{
+                this.data.push((v>>8)&0xff);
+                this.data.push((v>>0)&0xff);
+            }
+            return this;
+        }
+        w8(v){
+            this.data.push(v&0xff);
+            return this;
+        }
+        align(pos){
+            while(this.data.length<pos)this.data.push(0);
+            return this;
+        }
+        wbuff(buff){
+            buff.forEach(e=>this.data.push(e));
+            return this;
+        }
+
+        bytes(){
+            return this.data;
+        }
+
+
+        r8(){
+            return this.data[this.rpos++];
+        }
+        r16(){
+            let v=0;
+            if(this.LE){
+                v=this.data[this.rpos++];
+                v|=this.data[this.rpos++]<<8;
+            }
+            else{
+                v=this.data[this.rpos++]<<8;
+                v|=this.data[this.rpos++];
+            }
+            return v;
+        }
+        r32(){
+            let v=0;
+            if(this.LE){
+                v=this.data[this.rpos++];
+                v|=this.data[this.rpos++]<<8;
+                v|=this.data[this.rpos++]<<16;
+                v|=this.data[this.rpos++]<<24;
+            }
+            else{
+                v=this.data[this.rpos++]<<24;
+                v|=this.data[this.rpos++]<<16;
+                v|=this.data[this.rpos++]<<8;
+                v|=this.data[this.rpos++];
+            }
+            return v;
+        }
+        rbuff(len){
+            let v=[];
+            while(len--)v.push(this.data[this.rpos++]);
+            return v;
+        }
+        rbuff16(len){
+            let v=[];
+            while(len--)v.push(this.r16());
+            return v;
+        }
+        rappend(v,len){
+            while(len--)v.push(this.data[this.rpos++]);
+            return v;
+        }
+        rskip(len){
+            this.rpos+=len;
+            return this;
+        }
+        rset(pos){
+            this.rpos=pos;
+            if(this.rpos>this.data.length)this.rpos=this.data.length;
+            return this;
+        }
+        
+    }
+
+    function toHex(v){
+        let hex;
+        if((v&0xf)<10)hex=String.fromCharCode(48+(v&0xf));
+        else hex=String.fromCharCode(65+(v&0xf)-10);
+        v>>>=4;
+        if((v&0xf)<10)hex=String.fromCharCode(48+(v&0xf))+hex;
+        else hex=String.fromCharCode(65+(v&0xf)-10)+hex;
+        return hex;
+    }
+    function toHex32(v){
+        return toHex((v>>>24)&0xff)+toHex((v>>>16)&0xff)+toHex((v>>>8)&0xff)+toHex(v&0xff);
+    }
+    //输入uint8array
+    function pngInfo(data){
+        let e=new DataHelper(data,false);
+        const flag=0x89504E47|0;
+        const tEXt=0x74455874|0;
+        if(e.r32()!=flag)return;
+        e.rskip(4);
+        while(true){
+            if(e.rpos>=data.length)return;
+            const len=e.r32();
+            const tag=e.r32();
+            if(tag!=tEXt){
+                e.rskip(len+4);
+                continue;
+            }
+            return String.fromCharCode(...e.rbuff(len)).replaceAll('\0',': ').replaceAll('\n','\r\n');
+        }
+    }
+    function jpgInfo(data){
+        let e=new DataHelper(data,false);
+        const flag=0xFFD8FFE0|0;
+        const Exif=0x45786966|0;
+        const jfif=0x4a464946|0;
+        if(e.r16()!=0xffd8)return;
+        let maxpos=0;
+        while(true){
+            if(e.rpos>=data.length)return;
+            const tag=e.r16();
+            const len=e.r16();
+            if(tag==0xffe1){
+                if(e.r32()!=Exif){e.rskip(len-6);continue;}
+                if(e.r32()==(0x4949|0))e.LE=true;
+                else if(e.r32()==(0x4d4d|0))e.LE=false;
+                else return;
+                e.rskip(6);
+                maxpos=len+e.rpos-8;
+                break;
+            }
+            else{
+                e.rskip(len-2);
+            }
+        }
+        if(e.rpos>=data.length)return;
+        for (let i = e.rpos; i < maxpos; i++) {
+            if( data[i]==0x55&&
+                data[i+1]==0x4e&&
+                data[i+2]==0x49&&
+                data[i+3]==0x43&&
+                data[i+4]==0x4f&&
+                data[i+5]==0x44&&
+                data[i+6]==0x45&&
+                data[i+7]==0
+            ){
+                e.rset(i+8);
+                e.LE=false;
+                return String.fromCharCode(...e.rbuff16((maxpos-i-16)/2)).replaceAll('\n','\r\n');
+            }
+            
+        }
+        while(true){
+            const ilen=e.r16();
+            const itag=e.r16();
+            if(ilen==0xffc0)return;
+            if(itag==0x9286){
+                e.r16();
+                const len=e.r32();
+                e.rskip(8);
+                const str=String.fromCharCode(...e.rbuff(8))
+                if(str!='UNICODE\0')return;
+                e.LE=false;
+                return String.fromCharCode(...e.rbuff16((len-8)/2)).replaceAll('\n','\r\n');
+            }
+            else{
+                e.rskip(14);
+            }
+        }
+    }
+
+    function readFile(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsArrayBuffer(file);
+        }).catch(error => {
+            console.error("Error reading file:", error);
+            throw error;
+        });
+    }
+
+    function readjs(jsname){
+        const script = document.createElement('script');
+        script.src = jsname;
+        document.head.appendChild(script);
+        return new Promise(resolve => script.onload = resolve);
+    }
+</script>
+<script>
+    function image2mat(rgba, w, h, index = 0, dstf = null)
+    {
+        let rp, gp, bp;
+        let p = 0;
+        dstf = dstf == null ? new Array(w * h * 3) : dstf;
+
+        rp = index * w * h * 3;
+        gp = rp + w * h;
+        bp = gp + w * h;
+        for (let i = 0; i < h; i++)
+        {
+            for (let j = 0; j < w; j++)
+            {
+                dstf[rp+2] = rgba[p++];
+                dstf[rp+1] = rgba[p++];
+                dstf[rp+0] = rgba[p++]; p++;
+                rp+=3;
+            }
+        }
+
+        return dstf;
+    }
+
+    async function taggerdata(img,th=0.5){
+        let startTime = performance.now();
+        let results = await session.run({input:new ort.Tensor('float32', img, [1, 448, 448, 3])});
+        outputdata = results.output;
+        
+        let rating="";
+        let character="";
+        let tags=[];
+        for (let i = 0; i < 10863; i++)
+        {
+            if(outputdata.data[i]>th){
+                if(vocab[i][1]==0)tags.push(vocab[i][0]);
+                if(vocab[i][1]==4)character=(vocab[i][0]);
+                if(vocab[i][1]==9)rating=(vocab[i][0]);
+            }
+        }
+        let endTime = performance.now();
+        console.log("Execution time: " + (endTime - startTime) + " ms");
+        //info.innerText=(endTime - startTime)+"ms";
+        return [tags,rating,character];
+    }
+
+    async function tagger(ctx,th=0.5){
+        let dst=new Float32Array(448*448*3);
+        const {data}=ctx.getImageData(0, 0, 448, 448);
+        image2mat(data,448,448,0,dst);
+        return await taggerdata(dst,th);
+    }
+</script>
+<script>
+    var output=document.getElementById('outputtext');
+    var wbt=document.getElementById('wdbt');
+    var wrg=document.getElementById('wdrang');
+    document.addEventListener('DOMContentLoaded', function() {
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        document.addEventListener('dragover', function(e) {
+            e.preventDefault();
+        });
+
+        document.addEventListener('drop', function(e) {
+            e.preventDefault();
+            const file = e.dataTransfer.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = new Image();
+                    
+                    let cachearray=new Uint8Array(e.target.result); 
+                    
+                    if (file.type === 'image/png') {
+                        output.innerText=pngInfo(cachearray);
+                    }
+                    if (file.type === 'image/jpeg') {
+                        output.innerText=jpgInfo(cachearray);
+                    }
+                    
+                    if (file.name.includes('.onnx')) {
+                        let pross;
+                        if(typeof ort === 'undefined'){
+                            pross=readjs('vocab_vit.js').then(()=>{return readjs('ort.webgpu.min.js')}).then(()=>readFile(file));
+                        }
+                        else{
+                            pross=readFile(file)
+                        }
+                        pross.then(e=>ort.InferenceSession.create(e,{executionProviders: [navigator.gpu?'webgpu':'wasm']}))
+                        .then(e=>{
+                            session=e;
+                            wbt.style.display='block';
+                            wbt.onclick=e=>{
+                                tagger(ctx,wrg.value/100).then(e=>{output.innerText=e[0]}).catch(e=>{output.innerText=e});
+                            }
+                            return e;
+                        })
+                    }
+                    
+                    img.onload = function() {
+                        const canvasWidth = canvas.width;
+                        const canvasHeight = canvas.height;
+                        const imgWidth = img.width;
+                        const imgHeight = img.height;
+                        const aspectRatio = imgWidth / imgHeight;
+                        let newWidth, newHeight;
+                        if (imgWidth > canvasWidth || imgHeight > canvasHeight) {
+                            if (imgWidth > imgHeight) {
+                                newWidth = canvasWidth;
+                                newHeight = canvasWidth / aspectRatio;
+                            } else {
+                                newHeight = canvasHeight;
+                                newWidth = canvasHeight * aspectRatio;
+                            }
+                        } else {
+                            newWidth = imgWidth;
+                            newHeight = imgHeight;
+                        }
+                        const newX = (canvasWidth - newWidth) / 2;
+                        const newY = (canvasHeight - newHeight) / 2;
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(img, newX, newY, newWidth, newHeight);
+                    };
+                    img.src = URL.createObjectURL(new Blob([cachearray], { type: 'image/png' }));;
+                };
+                reader.readAsArrayBuffer(file);
+            }
+        });
+    });
+</script>
+</html>
