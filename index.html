@@ -77,7 +77,8 @@
 <div class="mainpanel">
     <div class="box">
         <div class="boxitems">
-            <div class="imgpanel">
+            <div class="imgpanel" onclick="fileInput.click()">
+                <input type="file" id="fileInput" accept=".png, .jpg, .onnx" style="display: none;" />
                 <canvas id="canvas" class="panel" width="448" height="448" style="display: block; margin: auto; border: 2px dashed #ccc;"></canvas>
             </div>
             <div style="display: block;overflow: hidden;">
@@ -336,10 +337,7 @@
         return dstf;
     }
 
-    async function taggerdata(img,th=0.5){
-        let startTime = performance.now();
-        let results = await session.run({input:new ort.Tensor('float32', img, [1, 448, 448, 3])});
-        outputdata = results.output;
+    function thTag(outputdata,th=0.5){
         
         let rating="";
         let character="";
@@ -358,28 +356,35 @@
         return [tags,rating,character];
     }
 
+    async function taggerdata(img){
+        startTime = performance.now();
+        let results = await session.run({input:new ort.Tensor('float32', img, [1, 448, 448, 3])});
+        outputdata = results.output;
+        let endTime = performance.now();
+        console.log("forward time: " + (endTime - startTime) + " ms");
+        return outputdata;
+    }
+
     async function tagger(ctx,th=0.5){
         let dst=new Float32Array(448*448*3);
         const {data}=ctx.getImageData(0, 0, 448, 448);
         image2mat(data,448,448,0,dst);
-        return await taggerdata(dst,th);
+        return await taggerdata(dst).then(e=>thTag(e,th));
     }
 </script>
 <script>
     var output=document.getElementById('outputtext');
     var wbt=document.getElementById('wdbt');
     var wrg=document.getElementById('wdrang');
+    var fileInput=document.getElementById('fileInput');
+    var newimage=false;
     document.addEventListener('DOMContentLoaded', function() {
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
 
-        document.addEventListener('dragover', function(e) {
-            e.preventDefault();
-        });
+        
 
-        document.addEventListener('drop', function(e) {
-            e.preventDefault();
-            const file = e.dataTransfer.files[0];
+        let imgfile=(file)=>{
             if (file) {
                 const reader = new FileReader();
                 reader.onload = function(e) {
@@ -398,16 +403,27 @@
                         let pross;
                         if(typeof ort === 'undefined'){
                             pross=readjs('vocab_vit.js').then(()=>{return readjs('ort.webgpu.min.js')}).then(()=>readFile(file));
+                            //pross=readjs('vocab_vit.js').then(()=>{return readjs('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.0-dev.20240621-69d522f4e9/dist/ort.all.min.js')}).then(()=>readFile(file));
                         }
                         else{
                             pross=readFile(file)
                         }
-                        pross.then(e=>ort.InferenceSession.create(e,{executionProviders: [navigator.gpu?'webgpu':'wasm']}))
+                        pross.then(
+                            e=>ort.InferenceSession.create(e,{executionProviders: [navigator.gpu?'webgpu':'wasm']}))
+                            //e=>ort.InferenceSession.create(e,{"executionProviders":[{"name":"webnn","deviceType":"gpu","powerPreference":"default"}],"logSeverityLevel":0}))
                         .then(e=>{
                             session=e;
                             wbt.style.display='block';
                             wbt.onclick=e=>{
-                                tagger(ctx,wrg.value/100).then(e=>{output.innerText=e[0]}).catch(e=>{output.innerText=e});
+                                if(newimage){
+                                    tagger(ctx,wrg.value/100).then(e=>{output.innerText=e[0];newimage=false;}).catch(e=>{output.innerText=e});
+                                    console.log('new forward');
+                                       
+                                }
+                                else{
+                                    output.innerText=thTag(outputdata,wrg.value/100)[0];
+                                    console.log('cache tag');
+                                }
                             }
                             return e;
                         })
@@ -436,12 +452,39 @@
                         const newY = (canvasHeight - newHeight) / 2;
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
                         ctx.drawImage(img, newX, newY, newWidth, newHeight);
+                        newimage=true;
                     };
                     img.src = URL.createObjectURL(new Blob([cachearray], { type: 'image/png' }));;
                 };
                 reader.readAsArrayBuffer(file);
             }
+        }
+
+        document.addEventListener('dragover', function(e) {
+            e.preventDefault();
         });
+
+        document.addEventListener('paste', function(e) {
+            e.preventDefault();
+            const items = e.clipboardData.items;
+            if (!items || items.length === 0) return;
+            const item = items[0];
+            if (item.kind === 'file' && item.type.indexOf('image/') !== -1) {
+                const file = item.getAsFile();
+                imgfile(file);
+            }
+        });
+
+        document.addEventListener('drop', function(e) {
+            e.preventDefault();
+            const file = e.dataTransfer.files[0];
+            imgfile(file);
+        });
+
+        fileInput.onchange=e=>{
+            const file = e.target.files[0];
+            imgfile(file);
+        }
     });
 </script>
 </html>
