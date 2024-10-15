@@ -85,8 +85,8 @@
                 <div id="outputtext" contenteditable="true" style="max-width: 400px;" ></div>
             </div>
         </div>
-        <div style="padding: 10px;display: none;">
-            <button class="bt" onclick="tagger">选择文件夹</button>
+        <div id="dirselect" style="padding: 10px;display: none;">
+            <button class="bt" onclick="listtag()">选择文件夹</button>
         </div>
         <div id="wdbt" style="padding: 10px;display: none;">
             <button class="bt">wd-vit-tagger-v3</button>
@@ -312,6 +312,94 @@
         document.head.appendChild(script);
         return new Promise(resolve => script.onload = resolve);
     }
+
+    function writeTextFile(dir,filename,text){
+        return dir.getFileHandle(filename,{ create: true }).then(e=>e.createWritable()).then(e=>{e.write(new Blob([text], { type: 'text/plain' }));return e.close()});
+    }
+
+    async function showDirectoryStructure() {
+        try {
+            const directoryHandle = root = await window.showDirectoryPicker();
+            //console.log("Directory structure:", directoryHandle);
+            
+            // 遍历文件夹结构
+            async function traverseDirectory(handle,allfile={},path='') {
+                const e=handle.entries();
+                for await(const entry of e) {
+                    //console.log(entry);
+                    if(entry[1].kind==='file'){
+                        let index=entry[0].lastIndexOf('.');
+                        let fname=index<0?entry[0]:entry[0].substring(0,index);
+                        allfile[path+entry[0]]={name:entry[0],_name:fname,dir:handle,file:entry[1],path:path};
+                    }
+                    else{
+                        //allfile[0].push({name:entry[0],dir:handle,file:entry[1]});
+                        allfile[path+entry[0]]={name:entry[0],dir:entry[1],file:entry[1]};
+                        await traverseDirectory(entry[1],allfile,path+entry[0]+'/');
+                    }
+                }
+                return allfile;
+            }
+            let files=await traverseDirectory(directoryHandle);
+            files['/']=directoryHandle;
+            console.log(files);
+            return files;
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    async function gentag(list,tagcache) {
+        
+    }
+    async function listtag() {
+        let list=await showDirectoryStructure().catch(e=>{});
+        if(list==null)return;
+        let tasks=[];
+        var tagcache=[];
+        for (let [k, i] of Object.entries(list)) {
+            let index=i.name.lastIndexOf('.');
+            let extname=index<0?'':i.name.substring(index);
+            if(extname==='.jpg'||extname==='.jpeg'||extname==='.png'||extname==='.webp'){
+                let name=i.name.substring(0,index);
+                let p=i.file.getFile().then(e=>readFile(e)).then(e=>{
+                    let array=new Uint8Array(e);
+                    if(extname==='.jpg'||extname==='.jpeg')
+                    {
+                        let info=jpgInfo(array);
+                        if(info){
+                            return writeTextFile(i.dir,name+'.txt',info);
+                        }
+                        else if(taggerImage){
+                            tagcache.push({name:name+'.txt',dir:i.dir,array:array});
+                        }
+                    }
+                    else if(extname==='.png'){
+                        let info=pngInfo(array);
+                        if(info){
+                            return writeTextFile(i.dir,name+'.txt',info);
+                        }
+                        else if(taggerImage){
+                            tagcache.push({name:name+'.txt',dir:i.dir,array:array});
+                        }
+                    }
+                    else if(extname==='.webp'){
+                        if(taggerImage){
+                            tagcache.push({name:name+'.txt',dir:i.dir,array:array});
+                        }
+                    }
+                    
+                })
+                tasks.push(p);
+            }
+        }
+        await Promise.all(tasks);
+        if(!taggerImage)return;
+        for (let i = 0; i < tagcache.length; i++) {
+            const it = tagcache[i];
+            await taggerImage(it.array).then(e=>writeTextFile(it.dir,it.name,e))
+        }
+    }
 </script>
 <script>
     function image2mat(rgba, w, h, index = 0, dstf = null)
@@ -377,18 +465,56 @@
     var wbt=document.getElementById('wdbt');
     var wrg=document.getElementById('wdrang');
     var fileInput=document.getElementById('fileInput');
+    var dirselect=document.getElementById('dirselect');
     var newimage=false;
+    var taggerImage=null;
     document.addEventListener('DOMContentLoaded', function() {
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
 
-        
+        if (typeof window.showDirectoryPicker === 'function') {
+            dirselect.style.display='block';
+        } else {
+            console.log('File system access is not supported.');
+        }
 
+        let drawImage=(cachearray)=>{
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = function() {
+                    const canvasWidth = canvas.width;
+                    const canvasHeight = canvas.height;
+                    const imgWidth = img.width;
+                    const imgHeight = img.height;
+                    const aspectRatio = imgWidth / imgHeight;
+                    let newWidth, newHeight;
+                    if (imgWidth > canvasWidth || imgHeight > canvasHeight) {
+                        if (imgWidth > imgHeight) {
+                            newWidth = canvasWidth;
+                            newHeight = canvasWidth / aspectRatio;
+                        } else {
+                            newHeight = canvasHeight;
+                            newWidth = canvasHeight * aspectRatio;
+                        }
+                    } else {
+                        newWidth = imgWidth;
+                        newHeight = imgHeight;
+                    }
+                    const newX = (canvasWidth - newWidth) / 2;
+                    const newY = (canvasHeight - newHeight) / 2;
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, newX, newY, newWidth, newHeight);
+                    newimage=true;
+                    resolve();
+                };
+                img.src = URL.createObjectURL(new Blob([cachearray], { type: 'image/png' }));
+            });
+        }
         let imgfile=(file)=>{
             if (file) {
                 const reader = new FileReader();
                 reader.onload = function(e) {
-                    const img = new Image();
+                    
                     
                     let cachearray=new Uint8Array(e.target.result); 
                     
@@ -413,6 +539,9 @@
                             //e=>ort.InferenceSession.create(e,{"executionProviders":[{"name":"webnn","deviceType":"gpu","powerPreference":"default"}],"logSeverityLevel":0}))
                         .then(e=>{
                             session=e;
+                            taggerImage=(array)=>{
+                                return drawImage(array).then(()=>{return tagger(ctx,wrg.value/100)}).then(e=>{return e[0]});
+                            }
                             wbt.style.display='block';
                             wbt.onclick=e=>{
                                 if(newimage){
@@ -428,33 +557,7 @@
                             return e;
                         })
                     }
-                    
-                    img.onload = function() {
-                        const canvasWidth = canvas.width;
-                        const canvasHeight = canvas.height;
-                        const imgWidth = img.width;
-                        const imgHeight = img.height;
-                        const aspectRatio = imgWidth / imgHeight;
-                        let newWidth, newHeight;
-                        if (imgWidth > canvasWidth || imgHeight > canvasHeight) {
-                            if (imgWidth > imgHeight) {
-                                newWidth = canvasWidth;
-                                newHeight = canvasWidth / aspectRatio;
-                            } else {
-                                newHeight = canvasHeight;
-                                newWidth = canvasHeight * aspectRatio;
-                            }
-                        } else {
-                            newWidth = imgWidth;
-                            newHeight = imgHeight;
-                        }
-                        const newX = (canvasWidth - newWidth) / 2;
-                        const newY = (canvasHeight - newHeight) / 2;
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        ctx.drawImage(img, newX, newY, newWidth, newHeight);
-                        newimage=true;
-                    };
-                    img.src = URL.createObjectURL(new Blob([cachearray], { type: 'image/png' }));;
+                    drawImage(cachearray);
                 };
                 reader.readAsArrayBuffer(file);
             }
