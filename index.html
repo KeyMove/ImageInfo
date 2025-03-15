@@ -308,7 +308,10 @@
 
     function readjs(jsname){
         const script = document.createElement('script');
-        script.src = jsname;
+        if(window.location.href.includes('github'))
+            script.src = 'https://fastly.jsdelivr.net/gh/KeyMove/ImageInfo/'+jsname;
+        else
+            script.src = jsname;
         document.head.appendChild(script);
         return new Promise(resolve => script.onload = resolve);
     }
