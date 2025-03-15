@@ -308,7 +308,7 @@
 
     function readjs(jsname){
         const script = document.createElement('script');
-        if(window.location.href.includes('github')&&!window.location.href.includes('https'))
+        if(window.location.href.includes('github')&&!jsname.includes('https'))
             script.src = `https://fastly.jsdelivr.net/gh/${window.location.host.split('.')[0]}${window.location.pathname}`+jsname;
         else
             script.src = jsname;
