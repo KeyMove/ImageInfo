@@ -308,8 +308,8 @@
 
     function readjs(jsname){
         const script = document.createElement('script');
-        if(window.location.href.includes('github'))
-            script.src = 'https://fastly.jsdelivr.net/gh/KeyMove/ImageInfo/'+jsname;
+        if(window.location.href.includes('github')&&!window.location.href.includes('https'))
+            script.src = `https://fastly.jsdelivr.net/gh/${window.location.host.split('.')[0]}${window.location.pathname}`+jsname;
         else
             script.src = jsname;
         document.head.appendChild(script);
@@ -473,7 +473,7 @@
     var taggerImage=null;
     document.addEventListener('DOMContentLoaded', function() {
         const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d',{ willReadFrequently: true });
 
         if (typeof window.showDirectoryPicker === 'function') {
             dirselect.style.display='block';
@@ -531,8 +531,8 @@
                     if (file.name.includes('.onnx')) {
                         let pross;
                         if(typeof ort === 'undefined'){
-                            pross=readjs('vocab_vit.js').then(()=>{return readjs('ort.webgpu.min.js')}).then(()=>readFile(file));
-                            //pross=readjs('vocab_vit.js').then(()=>{return readjs('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.0-dev.20240621-69d522f4e9/dist/ort.all.min.js')}).then(()=>readFile(file));
+                            //pross=readjs('vocab_vit.js').then(()=>{return readjs('ort.webgpu.min.js')}).then(()=>readFile(file));
+                            pross=readjs('vocab_vit.js').then(()=>{return readjs('https://fastly.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.all.min.js')}).then(()=>readFile(file));
                         }
                         else{
                             pross=readFile(file)
